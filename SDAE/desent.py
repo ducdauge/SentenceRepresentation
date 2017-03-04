@@ -17,7 +17,6 @@ from sklearn.cross_validation import KFold
 from nltk.tokenize import wordpunct_tokenize
 
 import book
-
 profile = False
 datasets = {'book': book.load_data}
              
@@ -76,9 +75,8 @@ def prepare_data(seqs_x, seqs_xn, maxlen=None, n_words=30000):
 def _mask(x, degree=0.1, use_preemb=False):
     n_words = x.shape[0]
     rndidx = numpy.random.permutation(n_words)
-    n_corr = numpy.round(numpy.float32(n_words) * degree)
-
-    corridx = rndidx[:n_corr]
+    n_corr = int(numpy.round(numpy.float32(n_words) * degree))
+    corridx = rndidx[:int(n_corr)]
 
     x_noise = copy.copy(x)
     for ci in corridx:
@@ -92,9 +90,8 @@ def _mask(x, degree=0.1, use_preemb=False):
 def _shuffle(x, degree=0.1, use_preemb=False):
     n_words = x.shape[0]
     rndidx = numpy.random.permutation(n_words-1)
-    n_corr = numpy.round(numpy.float32(n_words) * degree)
-
-    corridx = rndidx[:n_corr]
+    n_corr = int(numpy.round(numpy.float32(n_words) * degree))
+    corridx = rndidx[:int(n_corr)]
 
     x_noise = copy.copy(x)
     for ci in corridx:
@@ -107,7 +104,7 @@ def _shuffle(x, degree=0.1, use_preemb=False):
 def _remove(x, degree=0.1, use_preemb=False):
     n_words = x.shape[0]
     rndidx = numpy.random.permutation(n_words-1)
-    n_corr = numpy.round(numpy.float32(n_words) * degree)
+    n_corr = int(numpy.round(numpy.float32(n_words) * degree))
 
     corridx = set(rndidx[:n_corr])
 
@@ -1045,23 +1042,84 @@ def train(dim_word=100, # word vector dimensionality
 
     return train_err, valid_err, test_err
 
+def padded(indices, maxlen):
+    if len(indices) > maxlen:
+        indices = indices[:maxlen]
+    elif len(indices) < maxlen:
+        indices = indices + [1] * (maxlen - len(indices))
+    return indices + [0]
 
+def get_embs(f_ctx, lines, worddict, options):
+    nw = options["n_words"]
+    n_ex = len(lines)
+    batch_idx = range(int(n_ex / 1000))
+    remainder = (-(n_ex % 1000),n_ex)
+    indices = [(i*1000,(i+1)*1000) for i in batch_idx]
+    indices.append(remainder)
+    embs = []
+    for i in indices:
+        batch = lines[i[0]:i[1]]
+        seq = []
+        for i, line in enumerate(batch):
+            maxlen = options["maxlen"]
+            indices = [worddict[w.decode("utf-8")] \
+                        if w.decode("utf-8") in worddict \
+                        and worddict[w.decode("utf-8")] < nw\
+                        else 1 for w in line]
+            seq.append(padded(indices, maxlen))
+        seq = numpy.array(seq).astype('int64')
+        x = numpy.swapaxes(seq,0,1)
+        x_mask = numpy.ones((seq.shape[1], seq.shape[0])).astype('float32')
+        emb = f_ctx(x, x_mask)
+        embs.extend(emb)
+    return embs
 
+def embedding(
+          model='model.npz',
+          save='embeddings.txt',
+          sentences='sentences.txt',
+          dictionary='sentences.txt.dict.pkl',
+):
+    
+    # load dictionary
+    with open(dictionary, 'rb') as f:
+        worddict = pkl.load(f)
+    # reload options
+    with open('%s.pkl'%model, 'rb') as f:
+        model_options = pkl.load(f)
+
+    print 'Loading data'
+    examples = []
+    classes = []
+    with open(sentences, 'r') as f:
+        for l in f:
+            examples.append(l.split("\t")[0].lower().split())
+            classes.append(l.split("\t")[1].strip())
+
+    print 'Building model'
+    params = init_params(model_options)
+    # reload parameters
+    params = load_params(model, params)
+
+    tparams = init_tparams(params)
+    trng, use_noise, \
+          x, x_mask, x_noise, xn_mask, \
+          ctx, \
+          cost = \
+          build_model(tparams, model_options)
+
+    # sentence representation
+    print 'Building f_ctx...',
+    f_ctx = theano.function([x_noise, xn_mask], ctx)
+    
+    print 'Getting embeddings...',
+    embs = get_embs(f_ctx, examples, worddict, model_options)
+    print 'Saving...',
+    fout = open(save, "w")
+    for e, c in zip(*(embs, classes)):
+        line = " ".join([str(d) for d in e]) + "\t" + c + "\n"
+        fout.write(line)
+    fout.close()
+        
 if __name__ == '__main__':
     pass
-
-
-
-
-
-
-
-
-
-
-
-
-    
-
-
-
