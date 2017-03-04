@@ -4,6 +4,7 @@ import cPickle
 import operator
 from collections import defaultdict
 from nltk.tokenize import wordpunct_tokenize
+import codecs
 
 
 def add_line(textline, D):
@@ -15,7 +16,7 @@ def add_line(textline, D):
     
 def get_fdist(filename):
     D = defaultdict(int)
-    data = open(filename)
+    data = codecs.open(filename, "r", encoding="utf-8")
     for ss in data:
         D = add_line(ss,D)
     return D
@@ -29,7 +30,7 @@ def build_dictionary(path):
     return D
 
 def save_dictionary(outpath,D):
-    with open(outpath,'w') as out:
+    with codecs.open(outpath,'w') as out:
         cPickle.dump(D,out)
 
 if __name__ == "__main__":
@@ -39,4 +40,3 @@ if __name__ == "__main__":
 
     D = build_dictionary(args.filepath)
     save_dictionary(args.filepath+'.dict.pkl',D)
-
